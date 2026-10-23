@@ -1,5 +1,13 @@
 # openqodex
 
+## 0.14.0
+
+### Minor Changes
+
+- [#229](https://github.com/openqodex/openqodex/pull/229) [`80b270c`](https://github.com/openqodex/openqodex/commit/80b270cede281b669dfa832509397c554a9afe50) Thanks [@siddhant-mohan](https://github.com/siddhant-mohan)! - Check every repository lockfile at every review and scan of a change, show outside scanner advisories without counting them, and include fixed versions.
+
+- [#230](https://github.com/openqodex/openqodex/pull/230) [`7f7b114`](https://github.com/openqodex/openqodex/commit/7f7b1142ca443b202073353478226729fd4d6bf9) Thanks [@siddhant-mohan](https://github.com/siddhant-mohan)! - The review runs in stages. Two finder sessions read each changed file with the code around the change, a fresh verifier session checks every candidate, and only confirmed ones become findings. Style, naming, docs and test items are shown as observations, apart from the findings and outside the verdict. `review.stages: false` runs the single pass. Every file in the repository is given the code around the change, whatever its language.
+
 ## 0.13.0
 
 ### Minor Changes
