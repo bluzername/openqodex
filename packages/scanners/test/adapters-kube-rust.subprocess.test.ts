@@ -67,7 +67,9 @@ const RUST_PROJECT: Record<string, string> = {
 };
 
 // Puts the project's crates in the Cargo cache with the developer's cargo,
-// in a copy outside any scan; false when this machine has no cargo.
+// in a copy outside any scan; false when this machine has no cargo, cargo
+// fetch fails, or the Cargo home it should have filled still does not
+// exist (so the caller skips instead of reading a home that was never made).
 function primeCargo(files: Record<string, string>): boolean {
   const dir = tempDir("oq-cargo-prime-");
   for (const [name, body] of Object.entries(files)) {
@@ -76,7 +78,12 @@ function primeCargo(files: Record<string, string>): boolean {
   }
   const fetched = spawnSync("cargo", ["fetch", "--locked", "--manifest-path", join(dir, "Cargo.toml")], { cwd: dir, encoding: "utf8" });
   if (fetched.error) return false;
-  if (fetched.status !== 0) throw new Error(`cargo fetch failed: ${fetched.stderr}`);
+  const cargoHome = process.env.CARGO_HOME ?? join(userInfo().homedir, ".cargo");
+  if (fetched.status !== 0 || !existsSync(cargoHome)) {
+    const tail = (fetched.stderr ?? "").trim().split("\n").at(-1) ?? "";
+    process.stdout.write(`cargo fetch failed, skipping: ${tail}\n`);
+    return false;
+  }
   return true;
 }
 
@@ -259,6 +266,24 @@ describe("Kubernetes and Rust scanner subprocesses", () => {
     expect(status.status, status.reason ?? "").toBe("ran");
     expect(result.scan.candidates).toContainEqual(expect.objectContaining({ source: "cargo-deny", ruleId: "RUSTSEC-2021-0003", filePath: "Cargo.lock", lineStart: 6, lineEnd: 7 }));
   }, 300_000);
+
+  // primeCargo must skip, not throw, when cargo is on PATH but its fetch
+  // fails (issue 260): a stub cargo that always exits non-zero, ahead of
+  // the real one on PATH, stands in for "cargo present, home never filled".
+  it("primeCargo returns false instead of throwing when cargo fetch fails", () => {
+    const stubDir = tempDir("oq-cargo-stub-");
+    const stubPath = join(stubDir, "cargo");
+    writeFileSync(stubPath, "#!/bin/sh\necho 'error: failed to fetch' >&2\nexit 101\n");
+    chmodSync(stubPath, 0o755);
+    const realPath = process.env.PATH ?? "";
+    process.env.PATH = `${stubDir}:${realPath}`;
+    try {
+      expect(() => primeCargo(RUST_PROJECT)).not.toThrow();
+      expect(primeCargo(RUST_PROJECT)).toBe(false);
+    } finally {
+      process.env.PATH = realPath;
+    }
+  });
 
   // The same lock in a server run: cargo-deny's Cargo home is the run's own,
   // filled from the preinstalled one, which is read and never written.
