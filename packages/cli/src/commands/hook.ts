@@ -18,7 +18,7 @@ import { withBoundary } from "../agents/lock.js";
 import { loadRecord, saveRecord, serialize, type InstallRecord } from "../agents/record.js";
 import { EXIT_OK, EXIT_TOOL_FAILED } from "../exit-codes.js";
 import { readHomeReceipt, readHomeReceipts } from "../receipts.js";
-import type { GateReceipt } from "@openqodex/core";
+import { SymlinkStateError, type GateReceipt } from "@openqodex/core";
 import { launcherPath, openqodexHomeDir, planRuntime, shQuote } from "../launcher.js";
 
 const execFileAsync = promisify(execFile);
@@ -607,6 +607,14 @@ export async function run(args: string[]): Promise<number> {
     if (sub === "install") return await install(rest);
     if (sub === "uninstall") return await uninstall(rest);
   } catch (error) {
+    // A symbolic link where the repo's own state must be a real file or
+    // folder is content the person pushing chose, never a benign lookup or
+    // launcher failure: deny the push (exit 1) instead of the fail-open
+    // exit 2 every other error here gets.
+    if (sub === "pre-push" && error instanceof SymlinkStateError) {
+      process.stderr.write(`${error.message}\n`);
+      return 1;
+    }
     return fail(`openqodex hook ${sub}: ${error instanceof Error ? error.message : String(error)}`);
   }
   return fail(USAGE);

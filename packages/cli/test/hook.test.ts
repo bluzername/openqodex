@@ -44,7 +44,7 @@
 //     line: lefthook inserts {1} and {2} raw, so a remote URL holding
 //     '$(id)' closes the quotes and runs.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
   DEFAULT_CONFIG,
@@ -322,6 +322,24 @@ describe("hook install and uninstall", () => {
     // The runtime copy is gone: the scan cannot start at all.
     rmSync(join(s.oqHome, "runtime"), { recursive: true });
     expect(prePush().status).toBe(0);
+  });
+
+  it("a push that makes .openqodex a symbolic link is denied, not passed the way a failed lookup is (issue 339)", () => {
+    // Unlike a missing launcher or a scan that cannot start, this failure is
+    // the pushed content's own doing: loadConfig throws while reading
+    // .openqodex/config.yaml through the symlink the commit put at
+    // .openqodex itself, and that must deny the push, not pass it.
+    const s = sandbox({ "README.md": "hello\n", [BLOCK]: BLOCK_YAML });
+    published(s);
+    expect(cli(s, ["hook", "install"]).status).toBe(0);
+    symlinkSync("/nonexistent-openqodex-target", join(s.repo, ".openqodex"));
+    commitAll(s.repo);
+    const branch = git(s.repo, "symbolic-ref", "--short", "HEAD").trim();
+    const line = `refs/heads/${branch} ${git(s.repo, "rev-parse", "HEAD").trim()} refs/heads/${branch} ${git(s.repo, "rev-parse", "@{upstream}").trim()}\n`;
+    const remote = git(s.repo, "remote", "get-url", "origin").trim();
+    const prePush = spawnSync(join(s.repo, ".git/hooks/pre-push"), ["origin", remote], { cwd: s.repo, env: env(s), input: line, encoding: "utf8" });
+    expect(prePush.status, prePush.stderr).toBe(1);
+    expect(prePush.stderr).toContain(".openqodex is a symbolic link");
   });
 
   it("refuses a foreign hook without --force; --force twice keeps both earlier hooks", () => {

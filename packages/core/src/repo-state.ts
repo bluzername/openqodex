@@ -17,8 +17,16 @@ function steps(repoRoot: string, path: string): string[] {
   return rel.split(sep);
 }
 
-function linkError(repoRoot: string, at: string): OpenQodexError {
-  return new OpenQodexError(
+// A symbolic link where the repo's own state must be a real file or folder,
+// found while reading or writing it. The developer who controls the commit
+// or work tree chose to put it there, so this is never a benign lookup
+// failure (a missing launcher, a tool that cannot start): a caller such as
+// the git pre-push hook, which treats most errors as "could not check, let
+// the push through", must treat this one as a reason to block instead.
+export class SymlinkStateError extends OpenQodexError {}
+
+function linkError(repoRoot: string, at: string): SymlinkStateError {
+  return new SymlinkStateError(
     `${relative(repoRoot, at)} is a symbolic link; openqodex reads and writes only real files and folders there: replace the link with a real file (a copy is fine)`,
   );
 }
@@ -85,7 +93,7 @@ export function isRepoState(repoRoot: string, path: string): string | null {
         at = join(at!, part);
         return lstatSync(at, { throwIfNoEntry: false })?.isSymbolicLink() ?? false;
       });
-    if (crossed) throw new OpenQodexError(`${path} reaches the repo's .openqodex files through a symbolic link; name the file directly`);
+    if (crossed) throw new SymlinkStateError(`${path} reaches the repo's .openqodex files through a symbolic link; name the file directly`);
     return landed;
   }
   return namesState(spelledParts) ? spelled : null;
