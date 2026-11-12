@@ -30,6 +30,9 @@
 //     under review.severity_threshold and leaves the report: in a scan, where
 //     it counts as minor, or raised by the reviewer at a low severity in
 //     either submission version.
+// 16. A possible issue with no candidate or source, at the same file, range
+//     and category as a counted finding, shows again under its own title
+//     instead of folding into the counted one (issue #315).
 import { makeLineSet } from "../../../tests/line-set.mjs";
 import { describe, expect, it } from "vitest";
 import { checkSubmission, finalizeReview, proseErrors, scanReport, sentences, SETTINGS_RULE, SUPPRESSION_RULE } from "./finalize.js";
@@ -196,6 +199,46 @@ describe("finalizeReview: filters", () => {
       ["security", "critical", "SQL built from request input"],
       ["bug", "minor", "SQL built from request input"],
     ]);
+  });
+
+  it("folds a possible issue into a counted finding at the same file, range and category under another title (issue #315)", () => {
+    const report = run(
+      makeSubmission({
+        findings: [
+          finding({ severity: "critical", source: null, candidate: null }),
+          finding({
+            severity: "critical",
+            source: null,
+            candidate: null,
+            confidence: 0.65,
+            title: "Unsafe string interpolation builds the query",
+            description: "A second finder's wording for the same query.",
+          }),
+        ],
+      }),
+    );
+    expect(report.findings).toHaveLength(1);
+    expect(report.possible).toEqual([]);
+  });
+
+  it("keeps a possible issue separate when only its category differs from a counted finding at the same lines", () => {
+    const report = run(
+      makeSubmission({
+        findings: [
+          finding({ severity: "critical", source: null, candidate: null }),
+          finding({
+            severity: "critical",
+            source: null,
+            candidate: null,
+            confidence: 0.65,
+            category: "bug",
+            title: "A different kind of problem on the same line",
+          }),
+        ],
+      }),
+    );
+    expect(report.findings).toHaveLength(1);
+    expect(report.possible).toEqual([expect.objectContaining({ confidence: 0.65, category: "bug" })]);
   });
 
   it("redacts a secret the agent quotes, by fingerprint", () => {

@@ -220,6 +220,13 @@ export function findingKey(f: Pick<ReportFinding, "file_path" | "line_number" | 
   return [f.file_path, f.line_number, f.line_end, f.category, what].join("\0");
 }
 
+// The file, range and category alone, with no candidate, source or title.
+// Two findings with this in common are the same defect even when neither
+// cites a candidate or a source and two finders gave it different titles.
+function locationKey(f: Pick<ReportFinding, "file_path" | "line_number" | "line_end" | "category">): string {
+  return [f.file_path, f.line_number, f.line_end, f.category].join("\0");
+}
+
 // Removes only true duplicates: same file, range and category, and the same
 // candidate, or the same source when no candidate is cited, or the same title
 // when neither is. Keeps the higher severity, then the first.
@@ -340,9 +347,10 @@ export function finalizeReview(args: {
 
   const deduped = dedup(findings);
   const countedKeys = new Set(deduped.map(findingKey));
+  const countedLocations = new Set(deduped.map(locationKey));
   const own = ownIds(scan);
   const kept = deduped.filter((f) => shown(f, config, own));
-  const keptPossible = dedup(possible.filter((f) => !countedKeys.has(findingKey(f)))).filter((f) => {
+  const keptPossible = dedup(possible.filter((f) => !countedKeys.has(findingKey(f)) && !countedLocations.has(locationKey(f)))).filter((f) => {
     if (shown(f, config, own)) return true;
     const lensFloor = f.source?.startsWith("lens:") ? floors.get(f.source.slice("lens:".length)) : undefined;
     const floor = Math.max(GLOBAL_CONFIDENCE_FLOOR, lensFloor ?? 0);
@@ -597,9 +605,10 @@ export function checkSubmission(args: {
   const droppedBy = new Map(sub.dropped.map((d) => [d.candidate, d]));
   const deduped = dedup(findings);
   const countedKeys = new Set(deduped.map(findingKey));
+  const countedLocations = new Set(deduped.map(locationKey));
   const own = ownIds(scan);
   const kept = deduped.filter((f) => shown(f, config, own));
-  const keptPossible = dedup(possible.filter((f) => !countedKeys.has(findingKey(f)))).filter((f) => {
+  const keptPossible = dedup(possible.filter((f) => !countedKeys.has(findingKey(f)) && !countedLocations.has(locationKey(f)))).filter((f) => {
     if (shown(f, config, own)) return true;
     const lensFloor = f.source?.startsWith("lens:") ? floors.get(f.source.slice("lens:".length)) : undefined;
     const floor = Math.max(args.confidenceFloor ?? GLOBAL_CONFIDENCE_FLOOR, lensFloor ?? 0);
